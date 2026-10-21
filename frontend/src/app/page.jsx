@@ -6,13 +6,18 @@ import { Input } from "@/components/ui/Input";
 import axios from "axios";
 import { Controller, useForm } from "react-hook-form";
 import { isEmail } from "validator";
-import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+const api = axios.create({
+  baseURL: API_URL,
+  withCredentials: true,
+});
 
 const Page = () => {
-  const [loginSuccess, setLoginSuccess] = useState(false);
-  const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [isSessionLoading, setIsSessionLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [sessionError, setSessionError] = useState("");
   const {
     control,
     handleSubmit,
@@ -26,16 +31,39 @@ const Page = () => {
     },
     mode: "onBlur",
   });
+
   useEffect(() => {
-    loginSuccess && router.push("/welcome");
-  }, [loginSuccess]);
+    let isMounted = true;
+
+    api
+      .get("/login/me")
+      .then(({ data }) => {
+        if (isMounted) setUser(data.user);
+      })
+      .catch((error) => {
+        if (
+          isMounted &&
+          (!axios.isAxiosError(error) || error.response?.status !== 401)
+        ) {
+          setSessionError("Unable to check your session. Please try signing in.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsSessionLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const submit = async (credentials) => {
     clearErrors();
-    setLoginSuccess(false);
 
     try {
-      await axios.post(`${API_URL}/login/v1`, credentials);
-      setLoginSuccess(true);
+      const { data } = await api.post("/login/v1", credentials);
+      setUser(data.user);
+      setSessionError("");
     } catch (error) {
       let message = "Unable to sign in. Please try again.";
       if (axios.isAxiosError(error)) {
@@ -61,6 +89,49 @@ const Page = () => {
     }
   };
 
+  const logout = async () => {
+    setIsLoggingOut(true);
+    setSessionError("");
+
+    try {
+      await api.post("/login/logout");
+      setUser(null);
+    } catch {
+      setSessionError("Unable to sign out. Please try again.");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  if (isSessionLoading) {
+    return (
+      <main className="mx-auto flex h-screen w-1/4 items-center justify-center">
+        Checking session...
+      </main>
+    );
+  }
+
+  if (user) {
+    return (
+      <main className="mx-auto flex h-screen w-1/4 flex-col items-center justify-center gap-4">
+        <p role="status">Signed in as {user.email}</p>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isLoggingOut}
+          onClick={logout}
+        >
+          {isLoggingOut ? "Signing out..." : "Sign out"}
+        </Button>
+        {sessionError && (
+          <p role="alert" className="text-sm text-destructive">
+            {sessionError}
+          </p>
+        )}
+      </main>
+    );
+  }
+
   return (
     <form
       className="mx-auto flex h-screen w-1/4 flex-col items-center justify-center gap-4"
@@ -82,7 +153,6 @@ const Page = () => {
               field.onChange(event);
               clearErrors("email");
               clearErrors("root.server");
-              setLoginSuccess(false);
             }}
             aria-invalid={Boolean(errors.email)}
             placeholder="Email"
@@ -108,7 +178,6 @@ const Page = () => {
               field.onChange(event);
               clearErrors("password");
               clearErrors("root.server");
-              setLoginSuccess(false);
             }}
             placeholder="Password"
           />
@@ -127,9 +196,9 @@ const Page = () => {
           {errors.root.server.message}
         </p>
       )}
-      {loginSuccess && (
+      {sessionError && (
         <p role="status" className="text-sm">
-          Login successful.
+          {sessionError}
         </p>
       )}
     </form>

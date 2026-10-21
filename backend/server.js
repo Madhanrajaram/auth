@@ -1,9 +1,11 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dbConnect } from "./src/config/db.js";
+import { getAuthCookieOptions, getJwtSecret } from "./src/config/auth.js";
 import userRouter from "./src/routes/userRouter.js";
 
 const backendDir = dirname(fileURLToPath(import.meta.url));
@@ -14,11 +16,19 @@ dotenv.config({
 const app = express();
 const PORT = Number(process.env.PORT || 5001);
 
-app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:3000" }));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    credentials: true,
+  }),
+);
 app.use(express.json());
+app.use(cookieParser());
 app.use("/login", userRouter);
 
 const startServer = async () => {
+  getJwtSecret();
+  getAuthCookieOptions();
   await dbConnect();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`server is running on port ${PORT}`);
